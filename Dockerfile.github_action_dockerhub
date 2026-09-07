@@ -20,3 +20,5 @@ FROM pragent/pr-agent:github_action@sha256:548b760b81ab4b3f729182428695ccc1194bb
 # does. Verified byte-identical to the image's copy before patching, so this replaces a
 # known file rather than an assumed one.
 COPY pr_agent/algo/__init__.py /app/pr_agent/algo/__init__.py
+COPY pr_agent/algo/ai_handlers/litellm_ai_handler.py /app/pr_agent/algo/ai_handlers/litellm_ai_handler.py
+COPY pr_agent/algo/pr_processing.py /app/pr_agent/algo/pr_processing.py

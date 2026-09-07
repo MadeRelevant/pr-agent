@@ -877,6 +877,36 @@ class LiteLLMAIHandler(BaseAiHandler):
                     # get_logger().info(f"Adding temperature with value {temperature} to model {model}.")
                     kwargs["temperature"] = temperature
 
+                # An explicit OUTPUT cap, for any model. Upstream sets kwargs["max_tokens"]
+                # only for Claude extended thinking and for OpenRouter, so a natively
+                # reasoning model on any other provider runs against the provider's own
+                # default ceiling with no way to raise it from configuration.
+                #
+                # That is not academic here: deepseek-v4-pro truncates at 65,536 output
+                # tokens with finish_reason="length" and EMPTY content on a large review
+                # prompt, because the reasoning trace alone exhausts the ceiling before a
+                # single content token is emitted. Raising the cap is the only lever that
+                # lets such a trace finish; `config.max_output_tokens = 0` (the default)
+                # keeps upstream behaviour exactly.
+                #
+                # Distinct from `config.custom_model_max_tokens`, which is the INPUT window
+                # used to size the diff (see get_max_tokens) and does not bound output.
+                # Parsed inline rather than via the `_as_int` helper further down: that
+                # helper is a NESTED def inside this same function, which makes the name
+                # local to the whole scope, so referencing it here — before its def — is
+                # an UnboundLocalError.
+                try:
+                    max_output_tokens = int(str(get_settings().config.get("max_output_tokens", 0)).strip() or 0)
+                except (TypeError, ValueError):
+                    get_logger().warning(
+                        f"Ignoring non-numeric config.max_output_tokens="
+                        f"{get_settings().config.get('max_output_tokens')!r}"
+                    )
+                    max_output_tokens = 0
+                if max_output_tokens > 0 and "max_tokens" not in kwargs:
+                    get_logger().info(f"Adding max_tokens {max_output_tokens} to model {model}.")
+                    kwargs["max_tokens"] = max_output_tokens
+
                 if thinking_kwargs_gpt5:
                     kwargs.update(thinking_kwargs_gpt5)
                     if 'temperature' in kwargs:

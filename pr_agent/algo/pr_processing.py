@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import traceback
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from github import RateLimitExceededException
 
@@ -334,7 +334,9 @@ def generate_full_patch(convert_hunks_to_line_numbers, file_dict, max_tokens_mod
 async def retry_with_fallback_models(f: Callable, model_type: ModelType = ModelType.REGULAR):
     all_models = _get_all_models(model_type)
     all_deployments = _get_all_deployments(all_models)
+    all_efforts = _get_all_reasoning_efforts(all_models)
     original_deployment_id = get_settings().get("openai.deployment_id", None)
+    original_reasoning_effort = get_settings().config.get("reasoning_effort", None)
     try:
         # try each (model, deployment_id) pair until one is successful, otherwise raise exception
         for i, (model, deployment_id) in enumerate(zip(all_models, all_deployments, strict=True)):
@@ -344,6 +346,20 @@ async def retry_with_fallback_models(f: Callable, model_type: ModelType = ModelT
                     f"{(' from deployment ' + deployment_id) if deployment_id else ''}"
                 )
                 get_settings().set("openai.deployment_id", deployment_id)
+                # Per-entry reasoning effort. A natively-reasoning model can fail in a way
+                # that retrying it identically cannot fix — deepseek-v4-pro burns its whole
+                # output ceiling on a non-converging trace and returns empty content — so a
+                # useful fallback is often the SAME model asked to think less, which a list
+                # of model ids alone cannot express. None leaves config.reasoning_effort as
+                # configured, which is upstream's behaviour.
+                if all_efforts[i] is not None:
+                    get_settings().set("config.reasoning_effort", all_efforts[i])
+                    if i > 0:
+                        get_logger().info(
+                            f"Fallback {i}: retrying with reasoning_effort={all_efforts[i]!r}"
+                        )
+                else:
+                    get_settings().set("config.reasoning_effort", original_reasoning_effort)
                 result = await f(model)
             except Exception as e:
                 get_logger().warning(
@@ -357,6 +373,34 @@ async def retry_with_fallback_models(f: Callable, model_type: ModelType = ModelT
                 return result
     finally:
         get_settings().set("openai.deployment_id", original_deployment_id)
+        get_settings().set("config.reasoning_effort", original_reasoning_effort)
+
+
+def _get_all_reasoning_efforts(all_models: List[str]) -> List[Optional[str]]:
+    """
+    Reasoning effort per entry of `all_models`: index 0 is the primary, the rest follow
+    `config.fallback_models` in order.
+
+    `config.fallback_reasoning_efforts` supplies the FALLBACK entries only, so it lines up
+    one-to-one with `config.fallback_models` and the primary keeps `config.reasoning_effort`.
+    A short list, an unset value, or an empty string leaves that entry alone. Unset entirely
+    (the default), every entry uses `config.reasoning_effort` — upstream's behaviour.
+    """
+    efforts: List[Optional[str]] = [None] * len(all_models)
+    configured = get_settings().config.get("fallback_reasoning_efforts", []) or []
+    if not isinstance(configured, list):
+        configured = [e.strip() for e in str(configured).split(",")]
+    for j, effort in enumerate(configured):
+        idx = j + 1  # entry 0 is the primary; this list addresses the fallbacks
+        if idx >= len(all_models):
+            get_logger().warning(
+                f"config.fallback_reasoning_efforts has more entries ({len(configured)}) "
+                f"than config.fallback_models; ignoring the extras."
+            )
+            break
+        value = str(effort).strip() if effort is not None else ""
+        efforts[idx] = value or None
+    return efforts
 
 
 def _get_all_models(model_type: ModelType = ModelType.REGULAR) -> List[str]:

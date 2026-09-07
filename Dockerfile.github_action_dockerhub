@@ -1,1 +1,22 @@
-FROM pragent/pr-agent:github_action
+# Base pinned BY DIGEST, not by the floating `:github_action` tag.
+#
+# Upstream's version of this file is `FROM pragent/pr-agent:github_action` — a tag that
+# moves without any commit in this repo or in the repo that consumes the action. That was
+# already a latent problem (the reviewer's code could change under a pinned
+# `the-pr-agent/pr-agent@vX` with nothing to show for it); it becomes a correctness one
+# here, because the COPY below overwrites a file from that image and the two must come
+# from the same build. Bump this digest deliberately, together with the file below.
+#
+# sha256:548b760b... is the digest `:github_action` resolved to on 2026-09-07, verified
+# identical across both passing and failing runs of MadeRelevant/codemation-control-plane.
+FROM pragent/pr-agent:github_action@sha256:548b760b81ab4b3f729182428695ccc1194bbf87528c2b1e2b2b07e5223af7b6
+
+# Register DeepSeek V4 in SUPPORT_REASONING_EFFORT_MODELS so a configured
+# `reasoning_effort` actually reaches the model instead of being silently dropped.
+#
+# This COPY is the whole reason this fork exists. `action.yaml` builds this Dockerfile,
+# and upstream's one-line version pulls a PREBUILT image — so patching Python in a fork
+# has NO effect unless the patched file is layered onto that image, which is what this
+# does. Verified byte-identical to the image's copy before patching, so this replaces a
+# known file rather than an assumed one.
+COPY pr_agent/algo/__init__.py /app/pr_agent/algo/__init__.py

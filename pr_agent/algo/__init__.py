@@ -570,6 +570,19 @@ SUPPORT_REASONING_EFFORT_MODELS = [
     "grok-4.5-latest",
     "grok-build-latest",
     "grok-4.6",
+    # DeepSeek V4 reasons natively and has no token-budget parameter — DeepSeek's API
+    # documents exactly one reasoning control, `reasoning_effort`. Without these entries a
+    # configured reasoning_effort is silently dropped, and the model runs at its own
+    # default. On a large prompt that default does not converge: measured against
+    # Fireworks on a 76,042-token review prompt, the model emitted 65,536 reasoning
+    # tokens, hit the output cap, and returned finish_reason="length" with EMPTY content
+    # — so the caller sees either a client timeout or a blank completion, never a review.
+    # Registering the ids here lets `reasoning_effort` reach the model, which resolves the
+    # same prompt in 11s. Fireworks accepts the parameter on the OpenAI-shaped
+    # /v1/chat/completions path that LiteLLM uses for `fireworks_ai/`.
+    "deepseek-v4-pro",
+    "deepseek-v4-pro-0813",
+    "deepseek-v4-flash",
 ]
 
 # Clamp OpenAI-only levels for always-on Grok reasoning; allow xhigh on 4.6+.

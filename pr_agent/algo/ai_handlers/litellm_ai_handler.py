@@ -514,6 +514,23 @@ class LiteLLMAIHandler(BaseAiHandler):
         )
 
     @staticmethod
+    def _model_matches(model: str, names) -> bool:
+        """
+        True when `model` is one of `names`, matching the bare id as well as any
+        provider-prefixed form ("fireworks_ai/accounts/fireworks/models/<id>",
+        "openrouter/<vendor>/<id>", ...).
+
+        The reasoning-effort gate already matched this way, precisely so a configured
+        value is not silently dropped for a model referenced with a provider prefix.
+        The temperature gate did NOT — it used plain `in` membership against the full
+        model string, so no bare registry id could ever suppress temperature for a
+        prefixed model. That is the same silent-drop bug in the other direction, and it
+        makes NO_SUPPORT_TEMPERATURE_MODELS unusable for every provider-prefixed model.
+        Both gates now share this.
+        """
+        return any(model == n or model.endswith("/" + n) for n in names)
+
+    @staticmethod
     def _grok_reasoning_levels_for(model: str) -> set[str] | None:
         """Return the reasoning-effort levels accepted by a registered Grok model."""
         normalized_model = model.rsplit(":", 1)[0] if model.startswith("openrouter/") else model
@@ -873,7 +890,7 @@ class LiteLLMAIHandler(BaseAiHandler):
                     kwargs["max_retries"] = client_retries
 
                 # Add temperature only if model supports it
-                if model not in self.no_support_temperature_models and not get_settings().config.custom_reasoning_model:
+                if not self._model_matches(model, self.no_support_temperature_models) and not get_settings().config.custom_reasoning_model:
                     # get_logger().info(f"Adding temperature with value {temperature} to model {model}.")
                     kwargs["temperature"] = temperature
 

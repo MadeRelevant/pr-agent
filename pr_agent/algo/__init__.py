@@ -529,6 +529,25 @@ USER_MESSAGE_ONLY_MODELS = [
 
 NO_SUPPORT_TEMPERATURE_MODELS = [
     "deepseek/deepseek-reasoner",
+    # DeepSeek V4 is a reasoner: SENDING `temperature` AT ALL — including 0 — stops the
+    # reasoning trace converging, and `reasoning_effort` then stops binding. Measured
+    # against Fireworks on a 76,042-token review prompt, temperature the only variable and
+    # `reasoning_effort: "low"` throughout:
+    #
+    #   temperature absent   ->  7,002 / 12,644 / 13,540 reasoning tokens, finish=stop (n=3)
+    #   temperature 0        ->         65,536 reasoning tokens, finish=length, EMPTY content
+    #   temperature 0.2      ->         65,536 reasoning tokens, finish=length, EMPTY content
+    #
+    # 65,536 is the model's output ceiling, so with temperature present "low", "medium" and
+    # an ABSENT effort are indistinguishable — all three truncate rather than converge, which
+    # reads as "the model is flaky" and is actually "the control never bound". Omitting
+    # temperature restores the documented monotone ladder (low ~7-14k, high ~28k).
+    #
+    # Zeroing is NOT omitting. This must remove the field, which is why the ids belong here
+    # rather than in a `temperature = 0` setting.
+    "deepseek-v4-pro",
+    "deepseek-v4-pro-0813",
+    "deepseek-v4-flash",
     "o1-mini",
     "o1-mini-2024-09-12",
     "o1",
